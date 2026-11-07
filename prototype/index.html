@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FRONTIER デモ</title>
+<style>
+  :root {
+    --bg: #f6f3ee; --card: #ffffff; --ink: #2b2a28; --sub: #77736c;
+    --accent: #5f8f7b; --accent-soft: #e3eee8; --line: #e6e1d8;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; }
+  .app { max-width: 420px; margin: 0 auto; min-height: 100vh; padding: 20px 16px 90px; }
+  header h1 { font-size: 22px; margin: 0; letter-spacing: .08em; }
+  header p { margin: 4px 0 18px; color: var(--sub); font-size: 13px; }
+  .badge { display: inline-block; font-size: 11px; background: #f1e7d6; color: #8a6a3a;
+    padding: 2px 8px; border-radius: 99px; margin-left: 6px; vertical-align: middle; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 16px; margin-bottom: 14px; }
+  .card h2 { font-size: 15px; margin: 0 0 12px; }
+  label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { border: 1px solid var(--line); background: #fff; border-radius: 99px;
+    padding: 7px 12px; font-size: 13px; cursor: pointer; }
+  .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  input[type=number], textarea { width: 100%; padding: 9px; border: 1px solid var(--line);
+    border-radius: 10px; font: inherit; }
+  button.main { width: 100%; padding: 14px; border: 0; border-radius: 12px; background: var(--accent);
+    color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 8px; }
+  .step { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .step:last-child { border-bottom: 0; }
+  .step small { color: var(--sub); display: block; font-size: 12px; margin-top: 2px; }
+  .note { font-size: 12px; color: var(--sub); background: var(--accent-soft); padding: 10px; border-radius: 10px; margin-top: 10px; }
+  .chat { max-height: 280px; overflow-y: auto; }
+  .msg { padding: 9px 12px; border-radius: 12px; margin: 6px 0; font-size: 14px; max-width: 85%; line-height: 1.5; }
+  .msg.ai { background: var(--accent-soft); }
+  .msg.me { background: #efe9df; margin-left: auto; }
+  .plan { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+  .plan b { font-size: 15px; }
+  .plan p { margin: 4px 0 0; font-size: 13px; color: var(--sub); }
+  nav { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid var(--line);
+    display: flex; justify-content: center; }
+  nav .inner { display: flex; max-width: 420px; width: 100%; }
+  nav button { flex: 1; border: 0; background: none; padding: 12px 0 16px; font-size: 12px; color: var(--sub); cursor: pointer; }
+  nav button.on { color: var(--accent); font-weight: 700; }
+  .hidden { display: none; }
+  .log { font-size: 13px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>FRONTIER<span class="badge">デモ版</span></h1>
+    <p>AIがあなたの今日に合わせたヨガプランを作ります</p>
+  </header>
+
+  <!-- 今日のプラン -->
+  <section id="tab-plan">
+    <div class="card">
+      <h2>今日のコンディション</h2>
+      <label>目的</label>
+      <div class="chips" data-key="goal">
+        <span class="chip on" data-v="relax">リラックス</span>
+        <span class="chip" data-v="posture">姿勢改善</span>
+        <span class="chip" data-v="diet">ダイエット</span>
+        <span class="chip" data-v="sleep">睡眠の質</span>
+      </div>
+      <label>使える時間</label>
+      <div class="chips" data-key="time">
+        <span class="chip" data-v="10">10分</span>
+        <span class="chip on" data-v="20">20分</span>
+        <span class="chip" data-v="30">30分</span>
+      </div>
+      <label>ストレス度：<span id="stressVal">5</span> / 10</label>
+      <input type="range" id="stress" min="1" max="10" value="5">
+      <label>今日スマホを見た時間（時間）</label>
+      <input type="number" id="screen" min="0" max="24" value="6">
+      <label>心拍数（任意、ウェアラブル連携の想定）</label>
+      <input type="number" id="hr" min="40" max="180" placeholder="例：72">
+      <button class="main" id="make">AIプランを作る</button>
+    </div>
+
+    <div class="card hidden" id="result">
+      <h2 id="resultTitle">あなたのプラン</h2>
+      <div id="steps"></div>
+      <div class="note" id="reason"></div>
+      <button class="main" id="done">完了して記録する</button>
+    </div>
+  </section>
+
+  <!-- AI対話 -->
+  <section id="tab-chat" class="hidden">
+    <div class="card">
+      <h2>AIジャーナリング</h2>
+      <div class="chat" id="chat">
+        <div class="msg ai">お疲れさまです。今日はどんな一日でしたか？</div>
+      </div>
+      <textarea id="chatIn" rows="2" placeholder="思ったことをそのまま書いてください"></textarea>
+      <button class="main" id="send">送る</button>
+      <div class="note">デモ版では決まった返答を返します。本番では生成AIが感情やバイタルに合わせて返答する想定です。</div>
+    </div>
+  </section>
+
+  <!-- 記録 -->
+  <section id="tab-log" class="hidden">
+    <div class="card">
+      <h2>これまでの記録</h2>
+      <div id="logs"><p class="note">まだ記録がありません。プランを完了するとここに残ります。</p></div>
+    </div>
+  </section>
+
+  <!-- 料金 -->
+  <section id="tab-price" class="hidden">
+    <div class="card">
+      <h2>料金プラン（検討中）</h2>
+      <div class="plan"><b>1. AIのみ</b><p>アプリでAIプランとフィードバックを使い放題</p></div>
+      <div class="plan"><b>2. AI＋セミナー</b><p>アプリに加えて、拠点でのセミナーに参加できる</p></div>
+      <div class="plan"><b>3. セミナーのみ</b><p>たまに来たい人向け。単発チケットでも購入可</p></div>
+      <div class="plan"><b>法人プラン</b><p>福利厚生として従業員がアプリと拠点を利用できる月額契約</p></div>
+      <div class="note">金額はコスト試算後に決定します。</div>
+    </div>
+  </section>
+</div>
+
+<nav><div class="inner">
+  <button class="on" data-tab="plan">プラン</button>
+  <button data-tab="chat">対話</button>
+  <button data-tab="log">記録</button>
+  <button data-tab="price">料金</button>
+</div></nav>
+
+<script>
+  const state = { goal: "relax", time: "20" };
+  const logs = [];
+
+  document.querySelectorAll(".chips").forEach(group => {
+    group.addEventListener("click", e => {
+      const chip = e.target.closest(".chip");
+      if (!chip) return;
+      group.querySelectorAll(".chip").forEach(c => c.classList.remove("on"));
+      chip.classList.add("on");
+      state[group.dataset.key] = chip.dataset.v;
+    });
+  });
+
+  const stress = document.getElementById("stress");
+  stress.addEventListener("input", () => document.getElementById("stressVal").textContent = stress.value);
+
+  // ポーズの候補（本番ではヨガ専門家の監修データとAIで生成する想定）
+  const poses = {
+    relax:   ["呼吸を整える（腹式呼吸）", "猫と牛のポーズ", "チャイルドポーズ", "仰向けのねじり", "シャヴァーサナ"],
+    posture: ["山のポーズ", "猫と牛のポーズ", "コブラのポーズ", "ダウンドッグ", "胸を開くストレッチ"],
+    diet:    ["太陽礼拝", "戦士のポーズ2", "椅子のポーズ", "舟のポーズ", "シャヴァーサナ"],
+    sleep:   ["首と肩をほぐす", "前屈のポーズ", "合せきのポーズ", "足を壁に上げるポーズ", "4-7-8呼吸"]
+  };
+  const goalName = { relax: "リラックス", posture: "姿勢改善", diet: "ダイエット", sleep: "睡眠の質" };
+
+  document.getElementById("make").addEventListener("click", () => {
+    const total = Number(state.time);
+    const s = Number(stress.value);
+    const screen = Number(document.getElementById("screen").value || 0);
+    const hr = Number(document.getElementById("hr").value || 0);
+
+    let list = [...poses[state.goal]];
+    const reasons = [];
+    if (s >= 7 || (hr && hr >= 90)) {
+      list = ["呼吸を整える（腹式呼吸）", ...list.filter(p => p !== "太陽礼拝" && p !== "呼吸を整える（腹式呼吸）")];
+      reasons.push("ストレスや心拍が高めなので、最初に呼吸で落ち着く時間を入れました");
+    }
+    if (screen >= 6) {
+      list.splice(1, 0, "目と首を休めるストレッチ");
+      reasons.push("スマホを見る時間が長いので、目と首をほぐす動きを足しました");
+    }
+    if (total === 10) list = list.slice(0, 3);
+    if (total === 20) list = list.slice(0, 5);
+
+    const per = Math.max(1, Math.round(total / list.length));
+    document.getElementById("resultTitle").textContent = `${goalName[state.goal]}プラン（${total}分）`;
+    document.getElementById("steps").innerHTML = list.map((p, i) =>
+      `<div class="step"><span>${i + 1}. ${p}<small>カメラでポーズを確認（本番機能）</small></span><span>${per}分</span></div>`
+    ).join("");
+    document.getElementById("reason").textContent =
+      (reasons.length ? reasons.join("。") + "。" : "今日のコンディションに合わせた標準プランです。") +
+      " ※デモ版はルールで生成しています。";
+    document.getElementById("result").classList.remove("hidden");
+    state.last = { title: `${goalName[state.goal]}プラン ${total}分`, stress: s };
+  });
+
+  document.getElementById("done").addEventListener("click", () => {
+    if (!state.last) return;
+    const d = new Date();
+    logs.unshift(`${d.getMonth() + 1}/${d.getDate()} ${state.last.title}（ストレス度 ${state.last.stress}）`);
+    document.getElementById("logs").innerHTML = logs.map(l => `<div class="log">${l}</div>`).join("");
+    alert("記録しました");
+  });
+
+  const replies = [
+    "話してくれてありがとうございます。そのとき体はどんな感じでしたか？",
+    "大変でしたね。今日は5分だけ、呼吸を整える時間を取ってみませんか？",
+    "いい一日だったんですね。その気分を忘れないように、一言メモしておきましょう。",
+    "少しスマホから離れて、肩の力を抜いてみましょう。"
+  ];
+  let ri = 0;
+  document.getElementById("send").addEventListener("click", () => {
+    const input = document.getElementById("chatIn");
+    const text = input.value.trim();
+    if (!text) return;
+    const chat = document.getElementById("chat");
+    const me = document.createElement("div");
+    me.className = "msg me"; me.textContent = text; chat.appendChild(me);
+    const ai = document.createElement("div");
+    ai.className = "msg ai"; ai.textContent = replies[ri++ % replies.length]; chat.appendChild(ai);
+    input.value = ""; chat.scrollTop = chat.scrollHeight;
+  });
+
+  document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll("nav button").forEach(x => x.classList.remove("on"));
+    b.classList.add("on");
+    document.querySelectorAll("section").forEach(s => s.classList.add("hidden"));
+    document.getElementById("tab-" + b.dataset.tab).classList.remove("hidden");
+  }));
+</script>
+</body>
+</html>
